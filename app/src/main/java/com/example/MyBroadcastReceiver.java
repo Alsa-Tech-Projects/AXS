@@ -22,7 +22,7 @@ public class MyBroadcastReceiver extends BroadcastReceiver {
             MyAccessibilityService service = MyAccessibilityService.getInstance();
             if (service != null) {
                 if (targetButton != null && !targetButton.isEmpty()) {
-                    service.performDynamicClick(targetButton);
+                    service.handleServiceCommand(targetButton);
                 } else {
                     CommandLogManager.INSTANCE.addLog("empty_command", "Received AXS_COMMAND but 'target_button' extra was empty/missing.");
                 }

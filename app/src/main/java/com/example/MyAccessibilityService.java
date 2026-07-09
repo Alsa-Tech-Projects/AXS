@@ -67,9 +67,9 @@ public class MyAccessibilityService extends AccessibilityService {
                         targetButton = intent.getStringExtra("key");
                     }
                     
-                    Log.d(TAG, "Service Receiver received AXS_COMMAND with target_button: " + targetButton);
+                    Log.d(TAG, "Service Receiver received AXS_COMMAND with command: " + targetButton);
                     if (targetButton != null && !targetButton.isEmpty()) {
-                        performDynamicClick(targetButton);
+                        handleServiceCommand(targetButton);
                     } else {
                         CommandLogManager.INSTANCE.addLog("empty_command", "Received AXS_COMMAND but 'target_button' extra was empty/missing.");
                     }
@@ -93,6 +93,86 @@ public class MyAccessibilityService extends AccessibilityService {
                 Log.e(TAG, "Failed to unregister dynamic receiver", e);
             }
             mCommandReceiver = null;
+        }
+    }
+
+    /**
+     * Main entry point to handle incoming command actions.
+     * If the command matches a known system/global action keyword, it executes that.
+     * Otherwise, it dynamically scans the active screen window to click matching text.
+     */
+    public void handleServiceCommand(String command) {
+        if (command == null || command.trim().isEmpty()) {
+            CommandLogManager.INSTANCE.addLog("empty_command", "Command cannot be empty");
+            return;
+        }
+
+        String lowerCmd = command.trim().toLowerCase();
+        boolean isGlobalAction = false;
+        int actionId = -1;
+        String actionName = "";
+
+        switch (lowerCmd) {
+            case "back":
+            case "@back":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_BACK;
+                actionName = "Back";
+                break;
+            case "home":
+            case "@home":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_HOME;
+                actionName = "Home";
+                break;
+            case "notifications":
+            case "@notifications":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_NOTIFICATIONS;
+                actionName = "Notifications";
+                break;
+            case "recents":
+            case "@recents":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_RECENTS;
+                actionName = "Recents";
+                break;
+            case "quick_settings":
+            case "@quick_settings":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_QUICK_SETTINGS;
+                actionName = "Quick Settings";
+                break;
+            case "power_dialog":
+            case "@power_dialog":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_POWER_DIALOG;
+                actionName = "Power Dialog";
+                break;
+            case "lock_screen":
+            case "@lock_screen":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_LOCK_SCREEN;
+                actionName = "Lock Screen";
+                break;
+            case "split_screen":
+            case "@split_screen":
+                isGlobalAction = true;
+                actionId = GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN;
+                actionName = "Split Screen";
+                break;
+        }
+
+        if (isGlobalAction) {
+            boolean success = performGlobalAction(actionId);
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Performed global action: " + actionName);
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: Could not perform global action: " + actionName);
+            }
+        } else {
+            // Scan screen and perform dynamic click
+            performDynamicClick(command);
         }
     }
 

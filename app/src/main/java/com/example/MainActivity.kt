@@ -14,6 +14,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,14 +39,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material3.ExperimentalMaterial3Api
 import com.example.ui.theme.MyApplicationTheme
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -106,21 +107,36 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+data class SystemAction(
+    val label: String,
+    val command: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val description: String,
+    val testTag: String
+)
+
 @Composable
 fun AccessibilityDashboard(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var isEnabled by remember { mutableStateOf(false) }
 
     // Check service status periodically
     LaunchedEffect(Unit) {
         while (true) {
             isEnabled = isAccessibilityServiceEnabled(context, MyAccessibilityService::class.java)
-            kotlinx.coroutines.delay(1000)
+            delay(1000)
         }
     }
 
     val logs by CommandLogManager.logs.collectAsStateWithLifecycle()
     val clipboardManager = LocalClipboardManager.current
+
+    // On-device click simulation state
+    var clickText by remember { mutableStateOf("") }
+    var useDelay by remember { mutableStateOf(false) }
+    var countdownTimer by remember { mutableStateOf(0) }
+    var isTriggering by remember { mutableStateOf(false) }
 
     // Pulsing animation for active indicator
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -134,121 +150,375 @@ fun AccessibilityDashboard(modifier: Modifier = Modifier) {
         label = "pulse_alpha"
     )
 
-    Column(
+    // Supported System/Keyboard actions
+    val systemActions = remember {
+        listOf(
+            SystemAction("Back", "back", Icons.Default.ArrowBack, "Simulate Back button press", "trigger_back_btn"),
+            SystemAction("Home", "home", Icons.Default.Home, "Simulate Home button press", "trigger_home_btn"),
+            SystemAction("Recents", "recents", Icons.Default.List, "Show recent apps", "trigger_recents_btn"),
+            SystemAction("Notifications", "notifications", Icons.Default.Notifications, "Open notifications panel", "trigger_notifs_btn"),
+            SystemAction("Quick Settings", "quick_settings", Icons.Default.Settings, "Open quick settings panel", "trigger_quick_settings_btn"),
+            SystemAction("Power Menu", "power_dialog", Icons.Default.Warning, "Show standard power options dialog", "trigger_power_dialog_btn"),
+            SystemAction("Lock Screen", "lock_screen", Icons.Default.Lock, "Lock the screen immediately", "trigger_lock_screen_btn"),
+            SystemAction("Split Screen", "split_screen", Icons.Default.Star, "Toggle split screen multi-window mode", "trigger_split_screen_btn")
+        )
+    }
+
+    LazyColumn(
         modifier = modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
         // Service Hero Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("service_status_card"),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp)
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("service_status_card"),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                Column(
+                    modifier = Modifier.padding(24.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "ACCESSIBILITY SERVICE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.5.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "ACCESSIBILITY SERVICE",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.5.sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = if (isEnabled) "ACTIVE" else "INACTIVE",
+                                fontSize = 32.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = (-0.5).sp,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+
+                        // Rounded icon container
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(16.dp)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isEnabled) Icons.Default.VerifiedUser else Icons.Default.GppBad,
+                                contentDescription = "Status Icon",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .alpha(if (isEnabled) pulseAlpha else 1.0f)
+                                .background(
+                                    color = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    shape = CircleShape
+                                )
                         )
                         Text(
-                            text = if (isEnabled) "ACTIVE" else "INACTIVE",
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = (-0.5).sp,
+                            text = if (isEnabled) "Running & waiting for on-device actions" else "Tap below to enable Accessibility Service",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
-                    // Rounded icon container
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(16.dp)
+                    if (!isEnabled) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
                             ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isEnabled) Icons.Default.VerifiedUser else Icons.Default.GppBad,
-                            contentDescription = "Status Icon",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("enable_service_button"),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Enable Service in Settings",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(32.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+        // Delay countdown alert if running
+        if (isTriggering && countdownTimer > 0) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .alpha(if (isEnabled) pulseAlpha else 1.0f)
-                            .background(
-                                color = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                shape = CircleShape
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 3.dp
+                        )
+                        Column {
+                            Text(
+                                text = "Switching Apps Now!",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontSize = 14.sp
                             )
-                    )
-                    Text(
-                        text = if (isEnabled) "Monitoring for AXS_COMMAND" else "Tap below to enable Accessibility Service",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+                            Text(
+                                text = "Simulating click on '$clickText' in $countdownTimer seconds...",
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
                 }
+            }
+        }
 
-                if (!isEnabled) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            context.startActivity(intent)
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ),
+        // On-Device Click Simulator (ADB-Free automation)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "ON-DEVICE CLICK SIMULATOR",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Type text of any button or element on screen to click it.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = clickText,
+                        onValueChange = { clickText = it },
+                        placeholder = { Text("e.g. Settings, Submit, Cancel, etc.") },
+                        label = { Text("Target Element Text") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("enable_service_button"),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            .testTag("target_input_field"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
                         )
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { useDelay = !useDelay },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Checkbox(
+                            checked = useDelay,
+                            onCheckedChange = { useDelay = it },
+                            modifier = Modifier.testTag("delay_checkbox")
+                        )
+                        Column {
+                            Text(
+                                text = "Add 3-Second Countdown",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Gives you time to switch to another app screen before click triggers.",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            if (clickText.trim().isNotEmpty()) {
+                                if (useDelay) {
+                                    isTriggering = true
+                                    coroutineScope.launch {
+                                        countdownTimer = 3
+                                        while (countdownTimer > 0) {
+                                            delay(1000)
+                                            countdownTimer--
+                                        }
+                                        sendTestBroadcast(context, clickText)
+                                        isTriggering = false
+                                        clickText = ""
+                                    }
+                                } else {
+                                    sendTestBroadcast(context, clickText)
+                                    clickText = ""
+                                }
+                            }
+                        },
+                        enabled = clickText.trim().isNotEmpty() && !isTriggering,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("trigger_click_action_btn"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Enable Service in Settings",
-                            fontWeight = FontWeight.Bold
+                            text = if (isTriggering) "Waiting..." else "Execute Click Action",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
                         )
                     }
                 }
             }
         }
 
-        // Command Listening Section
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // On-Device System Actions Grid
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "ON-DEVICE NAVIGATION & SYSTEM CONTROLS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+
+                // Grid layout with 2 columns
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val chunks = systemActions.chunked(2)
+                    for (row in chunks) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            for (action in row) {
+                                Card(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = isEnabled) {
+                                            sendTestBroadcast(context, action.command)
+                                        }
+                                        .testTag(action.testTag),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isEnabled) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                                    ),
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                                    ),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .padding(14.dp)
+                                            .fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(
+                                                    color = if (isEnabled) MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)
+                                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = action.icon,
+                                                contentDescription = action.label,
+                                                tint = if (isEnabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+
+                                        Column {
+                                            Text(
+                                                text = action.label,
+                                                fontWeight = FontWeight.Black,
+                                                fontSize = 14.sp,
+                                                color = if (isEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline
+                                            )
+                                            Text(
+                                                text = action.description,
+                                                fontSize = 10.sp,
+                                                lineHeight = 12.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recent Actions Section
+        item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -257,206 +527,39 @@ fun AccessibilityDashboard(modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "BROADCAST RECEIVER",
+                    text = "ACTION LOG HISTORY",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = CircleShape
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outline,
-                            shape = CircleShape
-                        )
-                        .padding(horizontal = 8.dp, vertical = 2.0.dp)
-                ) {
-                    Text(
-                        text = "API 33",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
 
-            // Command Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        contentAlignment = Alignment.Center
+                if (logs.isNotEmpty()) {
+                    TextButton(
+                        onClick = {
+                            CommandLogManager.logs.value = emptyList()
+                        },
+                        modifier = Modifier.testTag("clear_logs_btn")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Sensors,
-                            contentDescription = "Sensor",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Column {
-                        Text(
-                            text = "Intent Filter Action",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = "com.research.AXS_COMMAND",
-                            fontSize = 14.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Clear Logs", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
-        // Local Interactive Triggers
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = "LOCAL TEST TRIGGERS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = { sendTestBroadcast(context, "back") },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("trigger_back_btn"),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Trigger Back", fontWeight = FontWeight.Bold)
-                }
-
-                Button(
-                    onClick = { sendTestBroadcast(context, "notifications") },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondary
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("trigger_notifs_btn"),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Default.Notifications, contentDescription = "Notifications", modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Trigger Notifs", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // ADB Copy Command Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    "ADB Broadcast Trigger Command",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                val adbCmd = "adb shell am broadcast -a com.research.AXS_COMMAND --es key back"
-                Row(
+        if (logs.isEmpty()) {
+            item {
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text(
-                        text = adbCmd,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { clipboardManager.setText(AnnotatedString(adbCmd)) },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .testTag("copy_adb_cmd")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy command",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            }
-        }
-
-        // Recent Actions Section
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "RECENT ACTIONS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(24.dp)
-                    )
-                    .padding(16.dp)
-            ) {
-                if (logs.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -470,21 +573,99 @@ fun AccessibilityDashboard(modifier: Modifier = Modifier) {
                                 modifier = Modifier.size(40.dp)
                             )
                             Text(
-                                "No commands received yet.",
+                                "No actions recorded yet.\nActivate controls above or trigger dynamic clicks.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
-                                textAlign = TextAlign.Center
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp
                             )
                         }
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                }
+            }
+        } else {
+            items(logs) { log ->
+                BoldLogItem(log)
+            }
+        }
+
+        // ADB Copy Command Dropdown Reference (Collapsible/Secondary)
+        item {
+            var expandedAdb by remember { mutableStateOf(false) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.clickable { expandedAdb = !expandedAdb }.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(logs) { log ->
-                            BoldLogItem(log)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                "Developer ADB Command Reference",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = if (expandedAdb) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    if (expandedAdb) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "If you want to trigger clicks or navigation externally from a computer instead of the UI, use this standard ADB broadcast command template:",
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+
+                        val adbCmd = "adb shell am broadcast -a com.research.AXS_COMMAND --es target_button \"back\""
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = adbCmd,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { clipboardManager.setText(AnnotatedString(adbCmd)) },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .testTag("copy_adb_cmd")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy command",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -501,7 +682,7 @@ fun BoldLogItem(log: CommandLog) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
+            .padding(vertical = 4.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -509,19 +690,23 @@ fun BoldLogItem(log: CommandLog) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Icon(
-                imageVector = when (log.key) {
-                    "back" -> Icons.Default.ArrowBack
-                    "notifications" -> Icons.Default.Notifications
+                imageVector = when (log.key.trim().lowercase()) {
+                    "back", "@back" -> Icons.Default.ArrowBack
+                    "home", "@home" -> Icons.Default.Home
+                    "recents", "@recents" -> Icons.Default.List
+                    "notifications", "@notifications" -> Icons.Default.Notifications
+                    "quick_settings", "@quick_settings" -> Icons.Default.Settings
+                    "lock_screen", "@lock_screen" -> Icons.Default.Lock
                     "service_connected" -> Icons.Default.CheckCircle
                     "service_disconnected" -> Icons.Default.Cancel
-                    else -> Icons.Default.Info
+                    else -> Icons.Default.PlayArrow
                 },
                 contentDescription = null,
-                tint = when (log.key) {
-                    "back", "notifications" -> MaterialTheme.colorScheme.primary
+                tint = when (log.key.trim().lowercase()) {
+                    "back", "@back", "home", "@home", "recents", "@recents", "notifications", "@notifications" -> MaterialTheme.colorScheme.primary
                     "service_connected" -> Color(0xFF2E7D32)
                     "service_disconnected" -> Color(0xFFC62828)
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.secondary
                 },
                 modifier = Modifier.size(20.dp)
             )
@@ -530,14 +715,14 @@ fun BoldLogItem(log: CommandLog) {
                 Text(
                     text = log.key.uppercase(Locale.getDefault()),
                     fontWeight = FontWeight.Black,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     letterSpacing = 0.5.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = log.status,
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -551,7 +736,7 @@ fun BoldLogItem(log: CommandLog) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         HorizontalDivider(
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
             thickness = 1.dp
         )
     }
@@ -559,7 +744,8 @@ fun BoldLogItem(log: CommandLog) {
 
 private fun sendTestBroadcast(context: Context, key: String) {
     val intent = Intent("com.research.AXS_COMMAND")
-    intent.putExtra("key", key)
+    intent.putExtra("target_button", key)
+    intent.putExtra("key", key) // support backward compatibility with both extras
     context.sendBroadcast(intent)
 }
 
