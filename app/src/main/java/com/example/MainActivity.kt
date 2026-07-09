@@ -160,7 +160,12 @@ fun AccessibilityDashboard(modifier: Modifier = Modifier) {
             SystemAction("Quick Settings", "quick_settings", Icons.Default.Settings, "Open quick settings panel", "trigger_quick_settings_btn"),
             SystemAction("Power Menu", "power_dialog", Icons.Default.Warning, "Show standard power options dialog", "trigger_power_dialog_btn"),
             SystemAction("Lock Screen", "lock_screen", Icons.Default.Lock, "Lock the screen immediately", "trigger_lock_screen_btn"),
-            SystemAction("Split Screen", "split_screen", Icons.Default.Star, "Toggle split screen multi-window mode", "trigger_split_screen_btn")
+            SystemAction("Split Screen", "split_screen", Icons.Default.Star, "Toggle split screen multi-window mode", "trigger_split_screen_btn"),
+            SystemAction("Paste", "paste", Icons.Default.ContentPaste, "Paste clipboard content", "trigger_paste_btn"),
+            SystemAction("Clear Text", "clear_text", Icons.Default.Clear, "Clear focused text input", "trigger_clear_text_btn"),
+            SystemAction("Click Focused", "click_focused", Icons.Default.TouchApp, "Click currently focused element", "trigger_click_focused_btn"),
+            SystemAction("Scroll Down", "scroll_down", Icons.Default.KeyboardArrowDown, "Scroll currently active view down", "trigger_scroll_down_btn"),
+            SystemAction("Scroll Up", "scroll_up", Icons.Default.KeyboardArrowUp, "Scroll currently active view up", "trigger_scroll_up_btn")
         )
     }
 
@@ -590,6 +595,101 @@ fun AccessibilityDashboard(modifier: Modifier = Modifier) {
             }
         }
 
+        // Termux Commands Dropdown (Collapsible - Local Phone Shell)
+        item {
+            var expandedTermux by remember { mutableStateOf(true) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+            ) {
+                Column(
+                    modifier = Modifier.clickable { expandedTermux = !expandedTermux }.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                "Termux On-Device Commands (ADB-Free)",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Icon(
+                            imageVector = if (expandedTermux) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    if (expandedTermux) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "To run commands directly on your phone from Termux, copy and run these broadcasts. They perform actions on your screen without ADB or PC:",
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+
+                        val commands = listOf(
+                            "Type in Field" to "am broadcast -a com.research.AXS_COMMAND --es target_button \"type:Apna Message Likho\"",
+                            "Click Screen Button" to "am broadcast -a com.research.AXS_COMMAND --es target_button \"Send\"",
+                            "Simulate Back Press" to "am broadcast -a com.research.AXS_COMMAND --es target_button \"back\"",
+                            "Scroll Window Down" to "am broadcast -a com.research.AXS_COMMAND --es target_button \"scroll_down\"",
+                            "Paste Clipboard" to "am broadcast -a com.research.AXS_COMMAND --es target_button \"paste\""
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            for ((label, cmd) in commands) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = cmd,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 9.sp,
+                                                color = MaterialTheme.colorScheme.onBackground,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            IconButton(
+                                                onClick = { clipboardManager.setText(AnnotatedString(cmd)) },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.ContentCopy,
+                                                    contentDescription = "Copy command",
+                                                    modifier = Modifier.size(14.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // ADB Copy Command Dropdown Reference (Collapsible/Secondary)
         item {
             var expandedAdb by remember { mutableStateOf(false) }
@@ -610,7 +710,7 @@ fun AccessibilityDashboard(modifier: Modifier = Modifier) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                             Text(
-                                "Developer ADB Command Reference",
+                                "Computer ADB Command Reference",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

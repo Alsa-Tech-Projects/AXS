@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -170,10 +171,141 @@ public class MyAccessibilityService extends AccessibilityService {
             } else {
                 CommandLogManager.INSTANCE.addLog(command, "Failed: Could not perform global action: " + actionName);
             }
-        } else {
-            // Scan screen and perform dynamic click
-            performDynamicClick(command);
+            return;
         }
+
+        // On-Device Advanced Automation Commands (ADB-Free)
+        if (lowerCmd.startsWith("type:")) {
+            String textToType = command.substring(5);
+            boolean success = performTypeAction(textToType);
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Typed text '" + textToType + "' in focused input field");
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: No focused editable input field found");
+            }
+            return;
+        }
+
+        if (lowerCmd.equals("paste") || lowerCmd.equals("@paste")) {
+            boolean success = performPasteAction();
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Pasted clipboard content into focused field");
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: No focused editable input field to paste text");
+            }
+            return;
+        }
+
+        if (lowerCmd.equals("clear_text") || lowerCmd.equals("clear")) {
+            boolean success = performClearTextAction();
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Cleared text in focused input field");
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: No focused editable input field to clear");
+            }
+            return;
+        }
+
+        if (lowerCmd.equals("click_focused") || lowerCmd.equals("click_focus")) {
+            boolean success = performClickFocusedAction();
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Simulated click on focused element");
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: No focused clickable element found");
+            }
+            return;
+        }
+
+        if (lowerCmd.equals("scroll_down") || lowerCmd.equals("@scroll_down")) {
+            boolean success = performScrollAction(true);
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Scrolled screen/list down");
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: No scrollable container found to scroll down");
+            }
+            return;
+        }
+
+        if (lowerCmd.equals("scroll_up") || lowerCmd.equals("@scroll_up")) {
+            boolean success = performScrollAction(false);
+            if (success) {
+                CommandLogManager.INSTANCE.addLog(command, "Success: Scrolled screen/list up");
+            } else {
+                CommandLogManager.INSTANCE.addLog(command, "Failed: No scrollable container found to scroll up");
+            }
+            return;
+        }
+
+        // Default: Scan screen and perform dynamic click
+        performDynamicClick(command);
+    }
+
+    private boolean performTypeAction(String text) {
+        AccessibilityNodeInfo focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (focusedNode != null) {
+            Bundle arguments = new Bundle();
+            arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+            boolean success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments);
+            focusedNode.recycle();
+            return success;
+        }
+        return false;
+    }
+
+    private boolean performPasteAction() {
+        AccessibilityNodeInfo focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (focusedNode != null) {
+            boolean success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+            focusedNode.recycle();
+            return success;
+        }
+        return false;
+    }
+
+    private boolean performClearTextAction() {
+        return performTypeAction("");
+    }
+
+    private boolean performClickFocusedAction() {
+        AccessibilityNodeInfo focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        if (focusedNode != null) {
+            boolean success = performClickOnNode(focusedNode);
+            focusedNode.recycle();
+            return success;
+        }
+        return false;
+    }
+
+    private boolean performScrollAction(boolean forward) {
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode == null) return false;
+        AccessibilityNodeInfo scrollableNode = findScrollableNode(rootNode);
+        if (scrollableNode != null) {
+            boolean success = scrollableNode.performAction(
+                forward ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            );
+            scrollableNode.recycle();
+            rootNode.recycle();
+            return success;
+        }
+        rootNode.recycle();
+        return false;
+    }
+
+    private AccessibilityNodeInfo findScrollableNode(AccessibilityNodeInfo root) {
+        if (root == null) return null;
+        if (root.isScrollable()) {
+            return root;
+        }
+        int childCount = root.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo child = root.getChild(i);
+            AccessibilityNodeInfo found = findScrollableNode(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     /**
