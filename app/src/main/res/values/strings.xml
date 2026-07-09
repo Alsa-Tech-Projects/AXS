@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Accessibility Commander</string>
+    <string name="accessibility_service_description">This service listens for com.research.AXS_COMMAND broadcasts to perform global actions such as going back or opening notifications.</string>
+</resources>

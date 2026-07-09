@@ -1,0 +1,6 @@
+{
+  "name": "Accessibility Commander",
+  "description": "An Android application that registers an AccessibilityService and a BroadcastReceiver to capture AXS_COMMAND broadcasts and trigger system global actions like back and notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
